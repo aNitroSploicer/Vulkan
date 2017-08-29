@@ -65,6 +65,7 @@ public:
 		glm::mat4 model;
 		glm::vec4 viewPos;
 		float lodBias = 0.0f;
+		float time = 0.0f;
 	} uboVS;
 
 	struct {
@@ -74,6 +75,9 @@ public:
 	VkPipelineLayout pipelineLayout;
 	VkDescriptorSet descriptorSet;
 	VkDescriptorSetLayout descriptorSetLayout;
+
+	bool firstFrame = true;
+	std::chrono::time_point<std::chrono::high_resolution_clock> lastTime;
 
 	VulkanExample() : VulkanExampleBase(ENABLE_VALIDATION)
 	{
@@ -85,7 +89,7 @@ public:
 
 	~VulkanExample()
 	{
-		// Clean up used Vulkan resources 
+		// Clean up used Vulkan resources
 		// Note : Inherited destructor cleans up resources stored in base class
 
 		destroyTextureImage(texture);
@@ -100,7 +104,7 @@ public:
 		uniformBufferVS.destroy();
 	}
 
-	// Enable physical device features required for this example				
+	// Enable physical device features required for this example
 	virtual void getEnabledFeatures()
 	{
 		// Enable anisotropic filtering if supported
@@ -141,7 +145,7 @@ public:
 			imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 			break;
 		}
-		
+
 		// Target layouts (new)
 		switch (newImageLayout)
 		{
@@ -168,9 +172,9 @@ public:
 		// Put barrier inside setup command buffer
 		vkCmdPipelineBarrier(
 			cmdBuffer,
-			srcStageFlags, 
-			destStageFlags, 
-			VK_FLAGS_NONE, 
+			srcStageFlags,
+			destStageFlags,
+			VK_FLAGS_NONE,
 			0, nullptr,
 			0, nullptr,
 			1, &imageMemoryBarrier);
@@ -178,12 +182,12 @@ public:
 
 	void loadTexture()
 	{
-		// We use the Khronos texture format (https://www.khronos.org/opengles/sdk/tools/KTX/file_format_spec/) 
+		// We use the Khronos texture format (https://www.khronos.org/opengles/sdk/tools/KTX/file_format_spec/)
 		std::string filename = getAssetPath() + "textures/metalplate01_rgba.ktx";
 		// Texture data contains 4 channels (RGBA) with unnormalized 8-bit values, this is the most commonly supported format
 		VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
 
-		// Set to true to use linear tiled images 
+		// Set to true to use linear tiled images
 		// This is just for learning purposes and not suggested, as linear tiled images are pretty restricted and often only support a small set of features (e.g. no mips, etc.)
 		bool forceLinearTiling = false;
 
@@ -243,7 +247,7 @@ public:
 			// This buffer is used as a transfer source for the buffer copy
 			bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 			bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-			
+
 			VK_CHECK_RESULT(vkCreateBuffer(device, &bufferCreateInfo, nullptr, &stagingBuffer));
 
 			// Get memory requirements for the staging buffer (alignment, memory type bits)
@@ -376,7 +380,7 @@ public:
 			imageCreateInfo.extent = { texture.width, texture.height, 1 };
 			VK_CHECK_RESULT(vkCreateImage(device, &imageCreateInfo, nullptr, &mappableImage));
 
-			// Get memory requirements for this image 
+			// Get memory requirements for this image
 			// like size and alignment
 			vkGetImageMemoryRequirements(device, mappableImage, &memReqs);
 			// Set memory allocation size to required memory size
@@ -399,7 +403,7 @@ public:
 			VkSubresourceLayout subResLayout;
 			void *data;
 
-			// Get sub resources layout 
+			// Get sub resources layout
 			// Includes row pitch, size offsets, etc.
 			vkGetImageSubresourceLayout(device, mappableImage, &subRes, &subResLayout);
 
@@ -416,7 +420,7 @@ public:
 			texture.image = mappableImage;
 			texture.deviceMemory = mappableMemory;
 			texture.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			
+
 			VkCommandBuffer copyCmd = VulkanExampleBase::createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
 
 			// Setup image memory barrier transfer image to shader read layout
@@ -433,9 +437,9 @@ public:
 			subresourceRange.layerCount = 1;
 
 			setImageLayout(
-				copyCmd, 
+				copyCmd,
 				texture.image,
-				VK_IMAGE_ASPECT_COLOR_BIT, 
+				VK_IMAGE_ASPECT_COLOR_BIT,
 				VK_IMAGE_LAYOUT_PREINITIALIZED,
 				texture.imageLayout,
 				subresourceRange);
@@ -558,6 +562,8 @@ public:
 	{
 		VulkanExampleBase::prepareFrame();
 
+		updateUniformBuffers();
+
 		// Command buffer to be sumitted to the queue
 		submitInfo.commandBufferCount = 1;
 		submitInfo.pCommandBuffers = &drawCmdBuffers[currentBuffer];
@@ -566,6 +572,16 @@ public:
 		VK_CHECK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE));
 
 		VulkanExampleBase::submitFrame();
+
+		auto now = std::chrono::high_resolution_clock::now();
+
+		if (firstFrame) firstFrame = false;
+		else {
+			auto dt = std::chrono::duration<double, std::milli>(now - lastTime).count();
+			uboVS.time += float(dt) / 1000.0;
+		}
+
+		lastTime = now;
 	}
 
 	void generateQuad()
@@ -575,8 +591,8 @@ public:
 		{
 			{ {  1.0f,  1.0f, 0.0f }, {  2.0f,  2.0f },{ 0.0f, 0.0f, 1.0f } },
 			{ { -1.0f,  1.0f, 0.0f }, { -2.0f,  2.0f },{ 0.0f, 0.0f, 1.0f } },
-			{ { -1.0f, -1.0f, 0.0f }, { -2.0f, -2.0f },{ 0.0f, 0.0f, 1.0f } },
-			{ {  1.0f, -1.0f, 0.0f }, {  2.0f, -2.0f },{ 0.0f, 0.0f, 1.0f } }
+			{ { -1.0f, -1.0f, 0.0f }, { -2.0f,  -2.0f },{ 0.0f, 0.0f, 1.0f } },
+			{ {  1.0f, -1.0f, 0.0f }, {  2.0f,  -2.0f },{ 0.0f, 0.0f, 1.0f } }
 		};
 
 		// Setup indices
@@ -607,8 +623,8 @@ public:
 		vertices.bindingDescriptions.resize(1);
 		vertices.bindingDescriptions[0] =
 			vks::initializers::vertexInputBindingDescription(
-				VERTEX_BUFFER_BIND_ID, 
-				sizeof(Vertex), 
+				VERTEX_BUFFER_BIND_ID,
+				sizeof(Vertex),
 				VK_VERTEX_INPUT_RATE_VERTEX);
 
 		// Attribute descriptions
@@ -620,7 +636,7 @@ public:
 				VERTEX_BUFFER_BIND_ID,
 				0,
 				VK_FORMAT_R32G32B32_SFLOAT,
-				offsetof(Vertex, pos));			
+				offsetof(Vertex, pos));
 		// Location 1 : Texture coordinates
 		vertices.attributeDescriptions[1] =
 			vks::initializers::vertexInputAttributeDescription(
@@ -652,7 +668,7 @@ public:
 			vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1)
 		};
 
-		VkDescriptorPoolCreateInfo descriptorPoolInfo = 
+		VkDescriptorPoolCreateInfo descriptorPoolInfo =
 			vks::initializers::descriptorPoolCreateInfo(
 				static_cast<uint32_t>(poolSizes.size()),
 				poolSizes.data(),
@@ -663,21 +679,21 @@ public:
 
 	void setupDescriptorSetLayout()
 	{
-		std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings = 
+		std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings =
 		{
 			// Binding 0 : Vertex shader uniform buffer
 			vks::initializers::descriptorSetLayoutBinding(
-				VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 
-				VK_SHADER_STAGE_VERTEX_BIT, 
+				VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+				VK_SHADER_STAGE_VERTEX_BIT,
 				0),
 			// Binding 1 : Fragment shader image sampler
 			vks::initializers::descriptorSetLayoutBinding(
-				VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 
-				VK_SHADER_STAGE_FRAGMENT_BIT, 
+				VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				VK_SHADER_STAGE_FRAGMENT_BIT,
 				1)
 		};
 
-		VkDescriptorSetLayoutCreateInfo descriptorLayout = 
+		VkDescriptorSetLayoutCreateInfo descriptorLayout =
 			vks::initializers::descriptorSetLayoutCreateInfo(
 				setLayoutBindings.data(),
 				static_cast<uint32_t>(setLayoutBindings.size()));
@@ -694,7 +710,7 @@ public:
 
 	void setupDescriptorSet()
 	{
-		VkDescriptorSetAllocateInfo allocInfo = 
+		VkDescriptorSetAllocateInfo allocInfo =
 			vks::initializers::descriptorSetAllocateInfo(
 				descriptorPool,
 				&descriptorSetLayout,
@@ -712,14 +728,14 @@ public:
 		{
 			// Binding 0 : Vertex shader uniform buffer
 			vks::initializers::writeDescriptorSet(
-				descriptorSet, 
-				VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 
-				0, 
+				descriptorSet,
+				VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+				0,
 				&uniformBufferVS.descriptor),
 			// Binding 1 : Fragment shader texture sampler
 			//	Fragment shader: layout (binding = 1) uniform sampler2D samplerColor;
 			vks::initializers::writeDescriptorSet(
-				descriptorSet, 				
+				descriptorSet,
 				VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,		// The descriptor set will use a combined image sampler (sampler and image could be split)
 				1,												// Shader binding point 1
 				&textureDescriptor)								// Pointer to the descriptor image for our texture
@@ -750,7 +766,7 @@ public:
 
 		VkPipelineColorBlendStateCreateInfo colorBlendState =
 			vks::initializers::pipelineColorBlendStateCreateInfo(
-				1, 
+				1,
 				&blendAttachmentState);
 
 		VkPipelineDepthStencilStateCreateInfo depthStencilState =

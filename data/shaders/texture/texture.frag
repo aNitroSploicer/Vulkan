@@ -10,11 +10,12 @@ layout (location = 1) in float inLodBias;
 layout (location = 2) in vec3 inNormal;
 layout (location = 3) in vec3 inViewVec;
 layout (location = 4) in vec3 inLightVec;
+layout (location = 5) in float time;
 
 layout (location = 0) out vec4 outFragColor;
 
-int max_iterations = 40;
-int max_magnitude = 5;
+int max_iterations = 1000;
+int max_magnitude = 100;
 
 vec3 HSV2RGB (vec3 color)
 {
@@ -40,11 +41,23 @@ vec3 HSV2RGB (vec3 color)
 	return vec3(0, 0, 0);
 }
 
-vec2 f(vec2 z)
+float powi(float z, int i)
 {
-	return vec2(z.x * z.x - z.y * z.y, 2.0 * (z.x * z.y)) + vec2(0.8, 0.156);
+	float r = 1;
+
+	while(i > 0) {
+			r *= z;
+			i--;
+	}
+
+	return r;
 }
 
+vec2 f(vec2 z)
+{
+	//vec2 z = vec2(0,0);
+	return vec2(z.x * z.x - z.y * z.y, 2.0 * (z.x * z.y));
+}
 
 float magnitude(vec2 z)
 {
@@ -52,13 +65,14 @@ float magnitude(vec2 z)
 }
 
 
-int iterate(vec2 z)
+int iterate(vec2 c)
 {
 	int n = 0;
+	vec2 z = vec2(0,0);
 
-	while (magnitude(z) < max_magnitude && n < max_iterations) {
-		z = f(z);
-
+	while (magnitude(z) < max_magnitude && n < max_iterations)
+	{
+		z = f(z) + c;
 		n++;
 	}
 
@@ -68,9 +82,8 @@ int iterate(vec2 z)
 void main()
 {
 	//vec4 color = texture(samplerColor, inUV, inLodBias);
-
 	float s = float(iterate(inUV)) / float(max_iterations);
-	vec4 color = vec4(HSV2RGB(vec3(s, 0.9, 0.9)).rgb, 1.0);
+	vec4 color = vec4(HSV2RGB(vec3(s + time, 0.9, 0.9)).rgb, 1.0);
 
 	vec3 N = normalize(inNormal);
 	vec3 L = normalize(inLightVec);
@@ -79,5 +92,5 @@ void main()
 	vec3 diffuse = max(dot(N, L), 0.0) * vec3(1.0);
 	float specular = pow(max(dot(R, V), 0.0), 16.0) * color.a;
 
-	outFragColor = vec4(diffuse * color.rgb + specular, 2.0);
+	outFragColor = vec4(diffuse * color.rgb + specular * (1.0 - s), 2.0);
 }
